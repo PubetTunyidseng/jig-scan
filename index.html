@@ -39,25 +39,24 @@
             document.getElementById('btn-out').classList.toggle('active', mode === 'OUT');
         }
 
-        function onScanSuccess(decodedText) {
-            // หยุดสแกนชั่วคราวเพื่อป้องกันการส่งซ้ำ
+function onScanSuccess(decodedText) {
             html5QrcodeScanner.pause();
-            document.getElementById('loading-msg').style.display = 'block';
+            alert("กำลังส่งข้อมูล: " + decodedText); // ใส่เพื่อให้รู้ว่าฟังก์ชันทำงาน
 
             fetch(powerAutomateUrl, {
                 method: 'POST',
+                mode: 'no-cors', // เพิ่มตรงนี้เพื่อเลี่ยงปัญหา Security บางประเภท
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jig_id: decodedText, action: currentMode })
+                body: JSON.stringify({
+                    jig_id: String(decodedText),
+                    action: String(currentMode)
+                })
             })
             .then(() => {
-                alert("✅ บันทึกสำเร็จ: " + decodedText + " (" + currentMode + ")");
+                alert("ส่งสัญญาณสำเร็จ! (ไปเช็คใน SharePoint)");
+                location.reload(); // รีโหลดหน้าเว็บเพื่อสแกนต่อ
             })
-            .catch(err => alert("❌ Error: " + err))
-            .finally(() => {
-                document.getElementById('loading-msg').style.display = 'none';
-                // รอ 2 วินาทีค่อยให้สแกนต่อได้
-                setTimeout(() => html5QrcodeScanner.resume(), 2000);
-            });
+            .catch(err => alert("ส่งไม่ไป: " + err));
         }
 
         const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
