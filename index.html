@@ -41,22 +41,32 @@
 
 function onScanSuccess(decodedText) {
             html5QrcodeScanner.pause();
-            alert("กำลังส่งข้อมูล: " + decodedText); // ใส่เพื่อให้รู้ว่าฟังก์ชันทำงาน
+            
+            // เตรียมข้อมูลให้ตรงกับ Schema
+            const sendData = {
+                jig_id: String(decodedText),
+                action: String(currentMode)
+            };
 
             fetch(powerAutomateUrl, {
                 method: 'POST',
-                mode: 'no-cors', // เพิ่มตรงนี้เพื่อเลี่ยงปัญหา Security บางประเภท
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jig_id: String(decodedText),
-                    action: String(currentMode)
-                })
+                // เปลี่ยนเป็น mode: 'cors' และลบ Headers บางตัวออก
+                mode: 'cors', 
+                headers: {
+                    // ลบ Content-Type ออกในบางกรณีถ้ายังไม่มา 
+                    // แต่เบื้องต้นลองใส่แบบเรียบง่ายที่สุด
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(sendData)
             })
             .then(() => {
-                alert("ส่งสัญญาณสำเร็จ! (ไปเช็คใน SharePoint)");
-                location.reload(); // รีโหลดหน้าเว็บเพื่อสแกนต่อ
+                alert("ส่งสัญญาณแล้ว! กรุณารอ 5-10 วินาที แล้วเช็ค SharePoint");
+                setTimeout(() => html5QrcodeScanner.resume(), 2000);
             })
-            .catch(err => alert("ส่งไม่ไป: " + err));
+            .catch(err => {
+                alert("ส่งไม่ไป: " + err);
+                html5QrcodeScanner.resume();
+            });
         }
 
         const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
