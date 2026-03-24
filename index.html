@@ -31,8 +31,7 @@
 
     <script>
         let currentMode = 'IN';
-        const powerAutomateUrl = "https://default5f40b94dde924c81a62a4014455791.e6.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/63addfcf57f948c4826aed0338b01c52/triggers/manual/paths/invoke?api-version=1"; // <--- วาง URL ที่ COPY มาจาก Step 1.2
-
+        const powerAutomateUrl = "https://default5f40b94dde924c81a62a4014455791.e6.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/63addfcf57f948c4826aed0338b01c52/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=2Qf1rGGC7PeXupgB2OazHzC5GpvLZARWJIdl8geSHtg"; // <--- วาง URL ที่ COPY มาจาก Step 1.2
         function setMode(mode) {
             currentMode = mode;
             document.getElementById('status-text').innerText = "โหมดปัจจุบัน: CHECK " + mode;
