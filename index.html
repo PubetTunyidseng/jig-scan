@@ -3,30 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jig Scan System - Set Mode</title>
+    <title>Jig Scan System - Pro UX</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f0f2f5; }
+        body { font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f0f2f5; transition: background 0.2s; }
         .container { max-width: 500px; margin: auto; }
-        #reader { width: 100%; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        #reader { width: 100%; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 15px; border: 4px solid transparent; }
         .mode-selector { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
-        button { padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; transition: 0.2s; }
+        button { padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; }
         .btn-mode { width: 45%; color: white; opacity: 0.4; }
         .active { opacity: 1; transform: scale(1.05); border: 2px solid #000; }
         .in { background: #28a745; }
         .out { background: #dc3545; }
         .btn-send { background: #007bff; color: white; width: 100%; margin-top: 15px; padding: 15px; font-size: 18px; display: none; }
         
-        #status-text { font-size: 1.1rem; margin: 10px 0; font-weight: bold; min-height: 25px; color: #555; }
+        #status-text { font-size: 1.2rem; margin: 10px 0; font-weight: bold; color: #333; background: #fff; padding: 10px; border-radius: 8px; }
         .table-container { margin-top: 20px; background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th, td { border-bottom: 1px solid #ddd; padding: 10px; text-align: center; }
-        th { background: #f8f9fa; }
+        
+        /* Effect ตอนสแกนติด */
+        .flash-active { background: #28a745 !important; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2 style="margin-top:0;">📦 Jig Set Scanner</h2>
+        <h2 style="margin-top:0;">📦 Jig Set Scanner Pro</h2>
         
         <div class="mode-selector">
             <button id="btn-in" class="btn-mode in active" onclick="setMode('IN')">CHECK IN</button>
@@ -34,30 +36,25 @@
         </div>
 
         <div id="reader"></div>
-        <div id="status-text">👉 เริ่มสแกน Part ID (OUT-...)</div>
+        <div id="status-text">👉 รอสแกน Part ID (OUT-...)</div>
 
         <div class="table-container" id="list-container" style="display:none;">
-            <strong>รายการที่สแกนแล้ว (<span id="count">0</span>)</strong>
+            <strong>รายการในคิว (<span id="count">0</span>)</strong>
             <table id="scanned-table">
                 <thead>
-                    <tr>
-                        <th>Part ID</th>
-                        <th>Locator</th>
-                        <th>Mode</th>
-                        <th>Del</th>
-                    </tr>
+                    <tr><th>Part ID</th><th>Loc</th><th>Mode</th><th>Del</th></tr>
                 </thead>
                 <tbody id="table-body"></tbody>
             </table>
-            <button class="btn-send" id="send-btn" onclick="sendAllData()">📤 ส่งข้อมูลทั้งหมดไป SharePoint</button>
+            <button class="btn-send" id="send-btn" onclick="sendAllData()">📤 ยืนยันส่งข้อมูลไป SharePoint</button>
         </div>
     </div>
 
     <script>
         let scannedItems = [];
         let currentMode = 'IN';
-        let tempPartID = null; // พักค่า Part ID
-        let isScanning = true; // ล็อคจังหวะสแกน
+        let tempPartID = null;
+        let isScanning = true;
         const googleScriptUrl = "https://script.google.com/macros/s/AKfycbyUBXPeL6er6_FPgApLUM0fYp8GWC-AmwuCcFK6GfAwRWbOQBsIxtyhNZCW7DkoKxezLQ/exec";
 
         function setMode(mode) {
@@ -66,47 +63,65 @@
             document.getElementById('btn-out').classList.toggle('active', mode === 'OUT');
         }
 
+        // ฟังก์ชันส่งเสียง Beep
+        function playBeep() {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.frequency.value = 880; gain.gain.value = 0.1;
+            osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+        }
+
         function onScanSuccess(decodedText) {
-            if (!isScanning) return; 
+            if (!isScanning) return;
+            isScanning = false; // หยุดสแกนชั่วคราวเพื่อรอการยืนยัน
+            html5QrcodeScanner.pause();
+
+            // --- ⚡️ Hard Flash & Feedback ---
+            playBeep();
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            document.body.classList.add('flash-active');
+            setTimeout(() => document.body.classList.remove('flash-active'), 400);
+
             const statusText = document.getElementById('status-text');
 
             if (!tempPartID) {
-                // ขั้นตอนที่ 1: เช็คว่าเป็น Part ID ไหม
+                // จังหวะที่ 1: ตรวจสอบ Part ID
                 if (decodedText.startsWith("OUT-")) {
-                    tempPartID = decodedText;
-                    statusText.innerText = "✅ Part: " + tempPartID + " | ต่อไปสแกน Locator";
-                    statusText.style.color = "blue";
-                    triggerCooldown(1500); // พัก 1.5 วิ
+                    if (confirm("ยืนยัน Part ID: " + decodedText + " ?")) {
+                        tempPartID = decodedText;
+                        statusText.innerText = "✅ Part: " + tempPartID + " | ต่อไปสแกน Locator";
+                        statusText.style.color = "blue";
+                    }
                 } else {
-                    alert("❌ ผิด! ต้องสแกน Part ID ก่อน (ขึ้นต้นด้วย OUT-)");
+                    alert("❌ ผิด! ต้องเป็น Part ID (OUT-...)");
                 }
             } else {
-                // ขั้นตอนที่ 2: เช็คว่าเป็น Locator ไหม (A หรือ B)
+                // จังหวะที่ 2: ตรวจสอบ Locator
                 if (decodedText.startsWith("A") || decodedText.startsWith("B")) {
-                    scannedItems.push({
-                        part_id: tempPartID,
-                        locator: decodedText,
-                        action: currentMode,
-                        timestamp: new Date().toLocaleString('th-TH')
-                    });
-                    tempPartID = null;
-                    statusText.innerText = "✅ คู่สำเร็จ! สแกน Part ID ชุดถัดไป...";
-                    statusText.style.color = "green";
-                    updateUI();
-                    triggerCooldown(2000); // พัก 2 วิ
+                    if (confirm("ยืนยัน Locator: " + decodedText + " ?")) {
+                        scannedItems.push({
+                            part_id: tempPartID,
+                            locator: decodedText,
+                            action: currentMode,
+                            timestamp: new Date().toLocaleString('th-TH')
+                        });
+                        tempPartID = null;
+                        statusText.innerText = "✅ คู่สำเร็จ! รอสแกนชุดถัดไป...";
+                        statusText.style.color = "green";
+                        updateUI();
+                    }
                 } else {
-                    alert("❌ ผิด! กรุณาสแกน Locator (ขึ้นต้นด้วย A หรือ B)");
+                    alert("❌ ผิด! ต้องเป็น Locator (A หรือ B)");
                 }
             }
-        }
 
-        function triggerCooldown(ms) {
-            isScanning = false;
-            html5QrcodeScanner.pause();
+            // กลับมาสแกนต่อหลังจากกด Confirm/Cancel
             setTimeout(() => {
                 isScanning = true;
                 html5QrcodeScanner.resume();
-            }, ms);
+            }, 500);
         }
 
         function updateUI() {
@@ -141,7 +156,7 @@
                 body: JSON.stringify(scannedItems)
             })
             .then(() => {
-                alert("✅ ส่งข้อมูล " + scannedItems.length + " ชุดสำเร็จ!");
+                alert("✅ บันทึกสำเร็จ!");
                 scannedItems = [];
                 updateUI();
                 location.reload();
