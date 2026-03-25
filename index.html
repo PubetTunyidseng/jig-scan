@@ -3,73 +3,139 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jig Scan System</title>
+    <title>Jig Scan System - Batch Mode</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body { font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f0f2f5; }
-        #reader { width: 100%; max-width: 450px; margin: 20px auto; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .mode-selector { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; }
-        button { padding: 15px 30px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; transition: 0.2s; width: 140px; }
-        .in { background: #28a745; color: white; opacity: 0.5; }
-        .out { background: #dc3545; color: white; opacity: 0.5; }
-        .active { opacity: 1; transform: scale(1.05); box-shadow: 0 4px 10px rgba(0,0,0,0.2); border: 2px solid #000; }
-        #status-text { font-size: 1.2rem; color: #333; margin-top: 10px; font-weight: bold; }
-        .loading { display: none; color: #666; font-style: italic; }
+        .container { max-width: 500px; margin: auto; }
+        #reader { width: 100%; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        .mode-selector { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
+        button { padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; transition: 0.2s; }
+        .btn-mode { width: 45%; color: white; opacity: 0.4; }
+        .active { opacity: 1; transform: scale(1.05); border: 2px solid #000; }
+        .in { background: #28a745; }
+        .out { background: #dc3545; }
+        .btn-send { background: #007bff; color: white; width: 100%; margin-top: 15px; padding: 15px; font-size: 18px; display: none; }
+        
+        /* สไตล์ตาราง */
+        .table-container { margin-top: 20px; background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { border-bottom: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background: #f8f9fa; }
     </style>
 </head>
 <body>
-    <h2 style="margin-top:0;">📦 Jig Management</h2>
-    
-    <div class="mode-selector">
-        <button id="btn-in" class="in active" onclick="setMode('IN')">CHECK IN</button>
-        <button id="btn-out" class="out" onclick="setMode('OUT')">CHECK OUT</button>
+    <div class="container">
+        <h2 style="margin-top:0;">📦 Jig Batch Scanner</h2>
+        
+        <div class="mode-selector">
+            <button id="btn-in" class="btn-mode in active" onclick="setMode('IN')">CHECK IN</button>
+            <button id="btn-out" class="btn-mode out" onclick="setMode('OUT')">CHECK OUT</button>
+        </div>
+
+        <div id="reader"></div>
+        
+        <div id="status-text">พร้อมสแกนรายการใหม่...</div>
+
+        <div class="table-container" id="list-container" style="display:none;">
+            <strong>รายการที่สแกนแล้ว (<span id="count">0</span>)</strong>
+            <table id="scanned-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Mode</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+            <button class="btn-send" id="send-btn" onclick="sendAllData()">📤 ส่งข้อมูลทั้งหมดไป SharePoint</button>
+        </div>
     </div>
 
-    <div id="reader"></div>
-    <div id="status-text">โหมดปัจจุบัน: CHECK IN</div>
-    <div id="loading-msg" class="loading">กำลังบันทึกข้อมูลลง SharePoint...</div>
-
     <script>
+        let scannedItems = [];
         let currentMode = 'IN';
-        const powerAutomateUrl = "https://script.google.com/macros/s/AKfycbymaV1KLLS3GIA-LTw9T4PwBvByF-OkiiNlvLgUsmgQ1zv7xIyX2NoSqkdfSapEBMWTMA/exec"; // <--- วาง URL ที่ COPY มาจาก Step 1.2
+        const googleScriptUrl = "https://script.google.com/macros/s/AKfycbymaV1KLLS3GIA-LTw9T4PwBvByF-OkiiNlvLgUsmgQ1zv7xIyX2NoSqkdfSapEBMWTMA/exec";
+
         function setMode(mode) {
             currentMode = mode;
-            document.getElementById('status-text').innerText = "โหมดปัจจุบัน: CHECK " + mode;
             document.getElementById('btn-in').classList.toggle('active', mode === 'IN');
             document.getElementById('btn-out').classList.toggle('active', mode === 'OUT');
         }
 
-function onScanSuccess(decodedText) {
-            html5QrcodeScanner.pause();
-            
-            // เตรียมข้อมูลให้ตรงกับ Schema
-            const sendData = {
-                jig_id: String(decodedText),
-                action: String(currentMode)
-            };
+        function onScanSuccess(decodedText) {
+            // เช็คว่าสแกนซ้ำในรายการเดิมไหม
+            if(scannedItems.some(item => item.jig_id === decodedText)) {
+                alert("รายการนี้ถูกสแกนไว้แล้ว!");
+                return;
+            }
 
-            fetch(powerAutomateUrl, {
+            // เพิ่มข้อมูลลง Queue
+            scannedItems.push({
+                jig_id: String(decodedText),
+                action: String(currentMode),
+                timestamp: new Date().toLocaleString('th-TH')
+            });
+
+            updateUI();
+            
+            // สแกนต่อได้ทันทีหลังผ่านไป 1 วินาที
+            html5QrcodeScanner.pause();
+            setTimeout(() => html5QrcodeScanner.resume(), 1000);
+        }
+
+        function updateUI() {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = "";
+            
+            scannedItems.forEach((item, index) => {
+                const row = `<tr>
+                    <td>${item.jig_id}</td>
+                    <td style="color:${item.action === 'IN' ? 'green' : 'red'}">${item.action}</td>
+                    <td><button onclick="removeItem(${index})" style="background:none; border:none; color:red; cursor:pointer;">✖</button></td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+
+            document.getElementById('count').innerText = scannedItems.length;
+            document.getElementById('list-container').style.display = scannedItems.length > 0 ? 'block' : 'none';
+            document.getElementById('send-btn').style.display = scannedItems.length > 0 ? 'block' : 'none';
+        }
+
+        function removeItem(index) {
+            scannedItems.splice(index, 1);
+            updateUI();
+        }
+
+        function sendAllData() {
+            if (scannedItems.length === 0) return;
+
+            const btn = document.getElementById('send-btn');
+            btn.innerText = "⏳ กำลังบันทึก...";
+            btn.disabled = true;
+
+            fetch(googleScriptUrl, {
                 method: 'POST',
-                // เปลี่ยนเป็น mode: 'cors' และลบ Headers บางตัวออก
-                mode: 'cors', 
-                headers: {
-                    // ลบ Content-Type ออกในบางกรณีถ้ายังไม่มา 
-                    // แต่เบื้องต้นลองใส่แบบเรียบง่ายที่สุด
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(sendData)
+                mode: 'no-cors', // ใช้ no-cors เพื่อให้สัญญาณผ่าน Google Apps Script ง่ายที่สุด
+                cache: 'no-cache',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(scannedItems)
             })
             .then(() => {
-                alert("ส่งสัญญาณแล้ว! กรุณารอ 5-10 วินาที แล้วเช็ค SharePoint");
-                setTimeout(() => html5QrcodeScanner.resume(), 2000);
+                alert("✅ บันทึกข้อมูล " + scannedItems.length + " รายการสำเร็จ!");
+                scannedItems = [];
+                updateUI();
+                location.reload(); // Refresh หน้าเว็บเพื่อเริ่มใหม่
             })
             .catch(err => {
-                alert("ส่งไม่ไป: " + err);
-                html5QrcodeScanner.resume();
+                alert("❌ ส่งไม่ไป: " + err);
+                btn.innerText = "📤 ส่งข้อมูลทั้งหมดไป SharePoint";
+                btn.disabled = false;
             });
         }
 
-        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 15, qrbox: 250 });
         html5QrcodeScanner.render(onScanSuccess);
     </script>
 </body>
