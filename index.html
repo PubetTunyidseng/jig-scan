@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jig Scan System - Batch Mode</title>
+    <title>Jig Scan System - Set Mode</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body { font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f0f2f5; }
@@ -17,16 +17,16 @@
         .out { background: #dc3545; }
         .btn-send { background: #007bff; color: white; width: 100%; margin-top: 15px; padding: 15px; font-size: 18px; display: none; }
         
-        /* สไตล์ตาราง */
+        #status-text { font-size: 1.1rem; margin: 10px 0; font-weight: bold; min-height: 25px; color: #555; }
         .table-container { margin-top: 20px; background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th, td { border-bottom: 1px solid #ddd; padding: 10px; text-align: center; }
         th { background: #f8f9fa; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2 style="margin-top:0;">📦 Jig Batch Scanner</h2>
+        <h2 style="margin-top:0;">📦 Jig Set Scanner</h2>
         
         <div class="mode-selector">
             <button id="btn-in" class="btn-mode in active" onclick="setMode('IN')">CHECK IN</button>
@@ -34,17 +34,17 @@
         </div>
 
         <div id="reader"></div>
-        
-        <div id="status-text">พร้อมสแกนรายการใหม่...</div>
+        <div id="status-text">👉 เริ่มสแกน Part ID (OUT-...)</div>
 
         <div class="table-container" id="list-container" style="display:none;">
             <strong>รายการที่สแกนแล้ว (<span id="count">0</span>)</strong>
             <table id="scanned-table">
                 <thead>
                     <tr>
-                        <th>ID</th>
+                        <th>Part ID</th>
+                        <th>Locator</th>
                         <th>Mode</th>
-                        <th>Action</th>
+                        <th>Del</th>
                     </tr>
                 </thead>
                 <tbody id="table-body"></tbody>
@@ -56,7 +56,9 @@
     <script>
         let scannedItems = [];
         let currentMode = 'IN';
-        const googleScriptUrl = "https://script.google.com/macros/s/AKfycbzoCn_bZoLc1nTEm4B25XskEZBIXMYIdWhOjIVaYT7sGrkh1Xfdkg5SP8ZLnjiYT9nnlA/exec";
+        let tempPartID = null; // พักค่า Part ID
+        let isScanning = true; // ล็อคจังหวะสแกน
+        const googleScriptUrl = "https://script.google.com/macros/s/AKfycbyUBXPeL6er6_FPgApLUM0fYp8GWC-AmwuCcFK6GfAwRWbOQBsIxtyhNZCW7DkoKxezLQ/exec";
 
         function setMode(mode) {
             currentMode = mode;
@@ -65,39 +67,59 @@
         }
 
         function onScanSuccess(decodedText) {
-            // เช็คว่าสแกนซ้ำในรายการเดิมไหม
-            if(scannedItems.some(item => item.jig_id === decodedText)) {
-                alert("รายการนี้ถูกสแกนไว้แล้ว!");
-                return;
+            if (!isScanning) return; 
+            const statusText = document.getElementById('status-text');
+
+            if (!tempPartID) {
+                // ขั้นตอนที่ 1: เช็คว่าเป็น Part ID ไหม
+                if (decodedText.startsWith("OUT-")) {
+                    tempPartID = decodedText;
+                    statusText.innerText = "✅ Part: " + tempPartID + " | ต่อไปสแกน Locator";
+                    statusText.style.color = "blue";
+                    triggerCooldown(1500); // พัก 1.5 วิ
+                } else {
+                    alert("❌ ผิด! ต้องสแกน Part ID ก่อน (ขึ้นต้นด้วย OUT-)");
+                }
+            } else {
+                // ขั้นตอนที่ 2: เช็คว่าเป็น Locator ไหม (A หรือ B)
+                if (decodedText.startsWith("A") || decodedText.startsWith("B")) {
+                    scannedItems.push({
+                        part_id: tempPartID,
+                        locator: decodedText,
+                        action: currentMode,
+                        timestamp: new Date().toLocaleString('th-TH')
+                    });
+                    tempPartID = null;
+                    statusText.innerText = "✅ คู่สำเร็จ! สแกน Part ID ชุดถัดไป...";
+                    statusText.style.color = "green";
+                    updateUI();
+                    triggerCooldown(2000); // พัก 2 วิ
+                } else {
+                    alert("❌ ผิด! กรุณาสแกน Locator (ขึ้นต้นด้วย A หรือ B)");
+                }
             }
+        }
 
-            // เพิ่มข้อมูลลง Queue
-            scannedItems.push({
-                jig_id: String(decodedText),
-                action: String(currentMode),
-                timestamp: new Date().toLocaleString('th-TH')
-            });
-
-            updateUI();
-            
-            // สแกนต่อได้ทันทีหลังผ่านไป 1 วินาที
+        function triggerCooldown(ms) {
+            isScanning = false;
             html5QrcodeScanner.pause();
-            setTimeout(() => html5QrcodeScanner.resume(), 1000);
+            setTimeout(() => {
+                isScanning = true;
+                html5QrcodeScanner.resume();
+            }, ms);
         }
 
         function updateUI() {
             const tbody = document.getElementById('table-body');
             tbody.innerHTML = "";
-            
             scannedItems.forEach((item, index) => {
-                const row = `<tr>
-                    <td>${item.jig_id}</td>
+                tbody.innerHTML += `<tr>
+                    <td>${item.part_id}</td>
+                    <td>${item.locator}</td>
                     <td style="color:${item.action === 'IN' ? 'green' : 'red'}">${item.action}</td>
-                    <td><button onclick="removeItem(${index})" style="background:none; border:none; color:red; cursor:pointer;">✖</button></td>
+                    <td><button onclick="removeItem(${index})" style="color:red;border:none;background:none;">✖</button></td>
                 </tr>`;
-                tbody.innerHTML += row;
             });
-
             document.getElementById('count').innerText = scannedItems.length;
             document.getElementById('list-container').style.display = scannedItems.length > 0 ? 'block' : 'none';
             document.getElementById('send-btn').style.display = scannedItems.length > 0 ? 'block' : 'none';
@@ -109,33 +131,28 @@
         }
 
         function sendAllData() {
-            if (scannedItems.length === 0) return;
-
             const btn = document.getElementById('send-btn');
             btn.innerText = "⏳ กำลังบันทึก...";
             btn.disabled = true;
 
             fetch(googleScriptUrl, {
                 method: 'POST',
-                mode: 'no-cors', // ใช้ no-cors เพื่อให้สัญญาณผ่าน Google Apps Script ง่ายที่สุด
-                cache: 'no-cache',
-                headers: { 'Content-Type': 'application/json' },
+                mode: 'no-cors',
                 body: JSON.stringify(scannedItems)
             })
             .then(() => {
-                alert("✅ บันทึกข้อมูล " + scannedItems.length + " รายการสำเร็จ!");
+                alert("✅ ส่งข้อมูล " + scannedItems.length + " ชุดสำเร็จ!");
                 scannedItems = [];
                 updateUI();
-                location.reload(); // Refresh หน้าเว็บเพื่อเริ่มใหม่
+                location.reload();
             })
             .catch(err => {
-                alert("❌ ส่งไม่ไป: " + err);
-                btn.innerText = "📤 ส่งข้อมูลทั้งหมดไป SharePoint";
+                alert("❌ Error: " + err);
                 btn.disabled = false;
             });
         }
 
-        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 15, qrbox: 250 });
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 });
         html5QrcodeScanner.render(onScanSuccess);
     </script>
 </body>
