@@ -3,33 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jig Scan - Confirmation Mode</title>
+    <title>Jig Scan System - Pro UX</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
+        /* สไตล์พื้นฐาน */
         body { font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f0f2f5; }
         .container { max-width: 500px; margin: auto; }
-        /* กรอบกล้องสำหรับการกะพริบสี */
-        #reader { 
-            width: 100%; 
-            border-radius: 15px; 
-            overflow: hidden; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
-            margin-bottom: 15px; 
-            border: 6px solid #ccc; /* สีเริ่มต้น */
-            transition: border-color 0.3s;
-        }
+        #reader { width: 100%; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 15px; border: 4px solid #ccc; transition: border-color 0.3s; }
+        
+        /* สไตล์ส่วนเลือกโหมด */
         .mode-selector { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
-        button { padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; }
+        button { padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; transition: 0.2s; }
         .btn-mode { width: 45%; color: white; opacity: 0.4; }
         .active { opacity: 1; transform: scale(1.05); border: 2px solid #000; }
         .in { background: #28a745; }
         .out { background: #dc3545; }
-        .btn-send { background: #007bff; color: white; width: 100%; margin-top: 15px; padding: 15px; font-size: 18px; display: none; }
-        
-        #status-text { font-size: 1.1rem; margin: 10px 0; font-weight: bold; color: #333; }
-        .table-container { margin-top: 20px; background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+
+        /* สไตล์ตารางและปุ่มส่ง */
+        .table-container { margin-top: 20px; background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: none; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th, td { border-bottom: 1px solid #ddd; padding: 10px; text-align: center; }
+        .btn-send { background: #007bff; color: white; width: 100%; margin-top: 15px; padding: 15px; font-size: 18px; border-radius: 10px; display: none; }
+
+        /* 👉 สไตล์ Custom Modal (Hides Browser Default Pop-up) */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal-content { background-color: white; padding: 25px; border-radius: 15px; width: 80%; max-width: 350px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: animatetop 0.3s; }
+        @keyframes animatetop { from {top: -300px; opacity: 0} to {top: 0; opacity: 1} }
+        
+        .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .modal-body { font-size: 16px; margin-bottom: 20px; color: #333; }
+        .modal-footer { display: flex; justify-content: space-around; gap: 10px; }
+        .btn-modal { width: 45%; padding: 12px; }
+        .btn-confirm { background-color: #28a745; color: white; }
+        .btn-cancel { background-color: #dc3545; color: white; }
     </style>
 </head>
 <body>
@@ -42,10 +48,9 @@
         </div>
 
         <div id="reader"></div>
-        
-        <div id="status-text">👉 เริ่มสแกน Part ID (OUT-...)</div>
+        <div id="status-text" style="font-weight:bold; margin: 10px 0;">👉 รอสแกน Part ID (OUT-...)</div>
 
-        <div class="table-container" id="list-container" style="display:none;">
+        <div class="table-container" id="list-container">
             <strong>รายการในคิว (<span id="count">0</span>)</strong>
             <table id="scanned-table">
                 <thead>
@@ -57,12 +62,25 @@
         </div>
     </div>
 
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">📦 ยืนยันข้อมูล</div>
+            <div class="modal-body" id="modalBodyText">
+                </div>
+            <div class="modal-footer">
+                <button class="btn-cancel btn-modal" onclick="closeModal(false)">ยกเลิก</button>
+                <button class="btn-confirm btn-modal" onclick="closeModal(true)">ตกลง</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let scannedItems = [];
         let currentMode = 'IN';
         let tempPartID = null;
         let isScanning = true;
-        const googleScriptUrl = "https://script.google.com/macros/s/AKfycbyUBXPeL6er6_FPgApLUM0fYp8GWC-AmwuCcFK6GfAwRWbOQBsIxtyhNZCW7DkoKxezLQ/exec";
+        let lastDecodedText = null; // เก็บค่าที่สแกนได้ชั่วคราว
+        const googleScriptUrl = "https://script.google.com/macros/s/AKfycbyUBXPeL6er6_FPgApLUM0fYp8GWC-AmwuCcFK6GfAwRWbOQBsIxtyhNZCW7DkoKxezLQ/exec"; // <--- อย่าลืมใส่ URL
 
         function setMode(mode) {
             currentMode = mode;
@@ -70,53 +88,83 @@
             document.getElementById('btn-out').classList.toggle('active', mode === 'OUT');
         }
 
+        // --- 👉 Logic ใหม่: เปิด Custom Modal ---
+        function showModal(text) {
+            document.getElementById('modalBodyText').innerHTML = text;
+            document.getElementById('confirmModal').style.display = 'flex';
+        }
+
+        function closeModal(isConfirmed) {
+            document.getElementById('confirmModal').style.display = 'none';
+            handleConfirmation(isConfirmed);
+        }
+
         function onScanSuccess(decodedText) {
             if (!isScanning) return;
-            isScanning = false; 
+            isScanning = false;
             html5QrcodeScanner.pause();
+            lastDecodedText = decodedText; // พักค่าไว้
 
-            // 1. กะพริบสีกรอบกล้อง (Visual Feedback)
+            // กะพริบสีกรอบ
             const readerDiv = document.getElementById('reader');
-            readerDiv.style.borderColor = "#28a745"; // เปลี่ยนเป็นเขียว
+            readerDiv.style.borderColor = "#28a745";
 
-            // 2. ขั้นตอนกดยืนยัน (Confirmation Modal)
-            setTimeout(() => {
-                if (!tempPartID) {
-                    // กรณีสแกน Part ID
-                    if (decodedText.startsWith("OUT-")) {
-                        if (confirm("ยืนยันการใช้ Part ID: \n" + decodedText)) {
-                            tempPartID = decodedText;
-                            document.getElementById('status-text').innerText = "✅ Part: " + tempPartID + " | ต่อไปสแกน Locator";
-                            document.getElementById('status-text').style.color = "blue";
-                        }
-                    } else {
-                        alert("❌ ข้อมูลไม่ถูกต้อง! ต้องเป็น Part ID (OUT-...)");
-                    }
+            // เรียกใช้ Custom Modal แทน confirm() ของ Browser
+            if (!tempPartID) {
+                // จังหวะสแกน Part ID
+                if (decodedText.startsWith("OUT-")) {
+                    // 👉 ข้อความที่ต้องการ
+                    showModal("<b>สแกน Part ID:</b><br>" + decodedText);
                 } else {
-                    // กรณีสแกน Locator
-                    if (decodedText.startsWith("A") || decodedText.startsWith("B")) {
-                        if (confirm("ยืนยันการใช้ Locator: \n" + decodedText)) {
-                            scannedItems.push({
-                                part_id: tempPartID,
-                                locator: decodedText,
-                                action: currentMode,
-                                timestamp: new Date().toLocaleString('th-TH')
-                            });
-                            tempPartID = null;
-                            document.getElementById('status-text').innerText = "✅ บันทึกคู่สำเร็จ! พร้อมสแกนชุดใหม่";
-                            document.getElementById('status-text').style.color = "green";
-                            updateUI();
-                        }
-                    } else {
-                        alert("❌ ข้อมูลไม่ถูกต้อง! ต้องเป็น Locator (A หรือ B)");
-                    }
+                    alert("❌ ข้อมูลผิด! ต้องเป็น Part ID (OUT-...)");
+                    resetScanner();
                 }
+            } else {
+                // จังหวะสแกน Locator
+                if (decodedText.startsWith("A") || decodedText.startsWith("B")) {
+                    // 👉 ข้อความที่ต้องการ
+                    showModal("<b>สแกน Locator:</b><br>" + decodedText);
+                } else {
+                    alert("❌ ข้อมูลผิด! ต้องเป็น Locator (A หรือ B)");
+                    resetScanner();
+                }
+            }
+        }
 
-                // คืนค่าสีเดิมและกลับมาสแกนต่อ
-                readerDiv.style.borderColor = "#ccc";
-                isScanning = true;
-                html5QrcodeScanner.resume();
-            }, 100);
+        // แยก Logic การจัดการหลังกด Modal
+        function handleConfirmation(isConfirmed) {
+            if (isConfirmed && lastDecodedText) {
+                if (!tempPartID) {
+                    // ตกลงรับ Part ID
+                    tempPartID = lastDecodedText;
+                    const status = document.getElementById('status-text');
+                    status.innerText = "✅ Part: " + tempPartID + " | ต่อไปสแกน Locator";
+                    status.style.color = "blue";
+                } else {
+                    // ตกลงรับ Locator -> บันทึกคู่
+                    scannedItems.push({
+                        part_id: tempPartID,
+                        locator: lastDecodedText,
+                        action: currentMode,
+                        timestamp: new Date().toLocaleString('th-TH')
+                    });
+                    tempPartID = null; // Reset
+                    const status = document.getElementById('status-text');
+                    status.innerText = "✅ บันทึกคู่สำเร็จ! พร้อมสแกนชุดใหม่";
+                    status.style.color = "green";
+                    updateUI();
+                }
+            }
+            // Cancel หรือจัดการเสร็จแล้ว ให้เริ่มสแกนต่อ
+            resetScanner();
+        }
+
+        function resetScanner() {
+            const readerDiv = document.getElementById('reader');
+            readerDiv.style.borderColor = "#ccc";
+            lastDecodedText = null;
+            isScanning = true;
+            html5QrcodeScanner.resume();
         }
 
         function updateUI() {
@@ -144,12 +192,7 @@
             const btn = document.getElementById('send-btn');
             btn.innerText = "⏳ กำลังบันทึก...";
             btn.disabled = true;
-
-            fetch(googleScriptUrl, {
-                method: 'POST',
-                mode: 'no-cors',
-                body: JSON.stringify(scannedItems)
-            })
+            fetch(googleScriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(scannedItems) })
             .then(() => {
                 alert("✅ บันทึกข้อมูลสำเร็จ!");
                 scannedItems = [];
@@ -162,7 +205,12 @@
             });
         }
 
-        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 });
+        // --- 👉 ปรับจูนระยะสแกน (บีบให้เข้าใกล้) ---
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
+            fps: 15, 
+            qrbox: 150, // เล็กลง บีบให้คนถือกล้องเข้ามาใกล้ (Poka-Yoke ระยะ)
+            aspectRatio: 1.0 // กรอบสี่เหลี่ยมจัตุรัสเป๊ะๆ ตามรูปแบบ QR
+        });
         html5QrcodeScanner.render(onScanSuccess);
     </script>
 </body>
