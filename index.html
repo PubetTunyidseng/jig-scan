@@ -3,44 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Jig Scan System - Pro UX</title>
+    <title>Jig Scan - Manual Trigger</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        /* สไตล์พื้นฐาน */
-        body { font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f0f2f5; }
+        body { font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 20px; background: #f0f2f5; transition: background 0.3s; }
         .container { max-width: 500px; margin: auto; }
-        #reader { width: 100%; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 15px; border: 4px solid #ccc; transition: border-color 0.3s; }
+        #reader { width: 100%; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 15px; border: 4px solid #ccc; background: white; }
         
-        /* สไตล์ส่วนเลือกโหมด */
         .mode-selector { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
-        button { padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; transition: 0.2s; }
+        button { padding: 12px; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; }
         .btn-mode { width: 45%; color: white; opacity: 0.4; }
-        .active { opacity: 1; transform: scale(1.05); border: 2px solid #000; }
+        .active { opacity: 1; border: 2px solid #000; }
         .in { background: #28a745; }
         .out { background: #dc3545; }
 
-        /* สไตล์ตารางและปุ่มส่ง */
+        /* 👉 นี่คือปุ่มที่คุณต้องกด (Manual Trigger Button) */
+        .btn-scan-trigger { 
+            width: 100%; padding: 25px; font-size: 22px; color: white; 
+            border-radius: 15px; margin: 15px 0; box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: block; /* มั่นใจว่าปุ่มโผล่แน่นอน */
+        }
+        .part-stage { background-color: #007bff; } /* สีน้ำเงิน */
+        .locator-stage { background-color: #6f42c1; } /* สีม่วง */
+        .scanning-active { background-color: #ffc107 !important; color: black !important; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.6; } }
+
         .table-container { margin-top: 20px; background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: none; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th, td { border-bottom: 1px solid #ddd; padding: 10px; text-align: center; }
         .btn-send { background: #007bff; color: white; width: 100%; margin-top: 15px; padding: 15px; font-size: 18px; border-radius: 10px; display: none; }
-
-        /* 👉 สไตล์ Custom Modal (Hides Browser Default Pop-up) */
-        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
-        .modal-content { background-color: white; padding: 25px; border-radius: 15px; width: 80%; max-width: 350px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: animatetop 0.3s; }
-        @keyframes animatetop { from {top: -300px; opacity: 0} to {top: 0; opacity: 1} }
-        
-        .modal-header { font-size: 18px; font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        .modal-body { font-size: 16px; margin-bottom: 20px; color: #333; }
-        .modal-footer { display: flex; justify-content: space-around; gap: 10px; }
-        .btn-modal { width: 45%; padding: 12px; }
-        .btn-confirm { background-color: #28a745; color: white; }
-        .btn-cancel { background-color: #dc3545; color: white; }
+        .flash-success { background: #28a745 !important; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2 style="margin-top:0;">📦 Jig Set Scanner</h2>
+        <h2 style="margin-top:0;">📦 Jig Scanner (Manual)</h2>
         
         <div class="mode-selector">
             <button id="btn-in" class="btn-mode in active" onclick="setMode('IN')">CHECK IN</button>
@@ -48,7 +45,12 @@
         </div>
 
         <div id="reader"></div>
-        <div id="status-text" style="font-weight:bold; margin: 10px 0;">👉 รอสแกน Part ID (OUT-...)</div>
+
+        <button id="scan-trigger" class="btn-scan-trigger part-stage" onclick="startScanSequence()">
+            📸 กดเพื่อสแกน Part ID
+        </button>
+        
+        <div id="status-text" style="font-weight:bold; margin: 10px 0;">👉 จ่อกล้องแล้วกดปุ่มสีน้ำเงิน</div>
 
         <div class="table-container" id="list-container">
             <strong>รายการในคิว (<span id="count">0</span>)</strong>
@@ -58,179 +60,114 @@
                 </thead>
                 <tbody id="table-body"></tbody>
             </table>
-            <button class="btn-send" id="send-btn" onclick="sendAllData()">📤 ส่งข้อมูลทั้งหมดไป SharePoint</button>
-        </div>
-    </div>
-
-    <div id="confirmModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">📦 ยืนยันข้อมูล</div>
-            <div class="modal-body" id="modalBodyText">
-                </div>
-            <div class="modal-footer">
-                <button class="btn-cancel btn-modal" onclick="closeModal(false)">ยกเลิก</button>
-                <button class="btn-confirm btn-modal" onclick="closeModal(true)">ตกลง</button>
-            </div>
+            <button class="btn-send" id="send-btn" onclick="sendAllData()">📤 ส่งข้อมูลไป SharePoint</button>
         </div>
     </div>
 
     <script>
-      let scannedItems = [];
-    let currentMode = 'IN';
-    let tempPartID = null;
-    let isScannerEnabled = false; 
-    let html5QrcodeScanner;
-    let scanTimeout; 
-    
-    // อย่าลืมใส่ URL Google Script ของคุณนะครับ
-    const googleScriptUrl = "https://script.google.com/macros/s/AKfycbyUBXPeL6er6_FPgApLUM0fYp8GWC-AmwuCcFK6GfAwRWbOQBsIxtyhNZCW7DkoKxezLQ/exec"; 
+        let scannedItems = [];
+        let currentMode = 'IN';
+        let tempPartID = null;
+        let isScannerEnabled = false; 
+        let scanTimeout;
+        const googleScriptUrl = "https://script.google.com/macros/s/AKfycbyUBXPeL6er6_FPgApLUM0fYp8GWC-AmwuCcFK6GfAwRWbOQBsIxtyhNZCW7DkoKxezLQ/exec";
 
-    function setMode(mode) {
-        currentMode = mode;
-        document.getElementById('btn-in').classList.toggle('active', mode === 'IN');
-        document.getElementById('btn-out').classList.toggle('active', mode === 'OUT');
-        resetScanUI(); 
-    }
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('btn-in').classList.toggle('active', mode === 'IN');
+            document.getElementById('btn-out').classList.toggle('active', mode === 'OUT');
+            resetScanUI();
+        }
 
-    function startScanSequence() {
-        const readerDiv = document.getElementById('reader');
-        const statusText = document.getElementById('status-text');
-        const triggerBtn = document.getElementById('scan-trigger');
+        // เมื่อกดปุ่ม ระบบถึงจะเริ่มสแกน (Logic: Manual Trigger)
+        function startScanSequence() {
+            const triggerBtn = document.getElementById('scan-trigger');
+            triggerBtn.classList.add('scanning-active');
+            triggerBtn.innerText = "🔍 กำลังอ่าน QR... (จ่อไว้)";
+            triggerBtn.disabled = true;
 
-        // Visual Feedback เมื่อกดปุ่ม
-        readerDiv.style.borderColor = "#ffc107"; 
-        statusText.innerText = "👉 กำลังรอรับสัญญาณ QR...";
-        statusText.style.color = "#ffc107";
-        
-        triggerBtn.classList.add('scanning-stage');
-        triggerBtn.disabled = true;
-
-        isScannerEnabled = true; 
-        
-        // ตั้งเวลาหยุดสแกนใน 5 วินาทีหากไม่มีอะไรเกิดขึ้น
-        clearTimeout(scanTimeout);
-        scanTimeout = setTimeout(stopScannerManually, 5000); 
-    }
-
-    function stopScannerManually() {
-        if (!isScannerEnabled) return;
-        isScannerEnabled = false;
-        resetScanUI();
-        document.getElementById('status-text').innerText = "❌ สแกนไม่ติด (Timeout) ลองใหม่อีกครั้ง";
-        document.getElementById('status-text').style.color = "red";
-    }
-
-    function onScanSuccess(decodedText) {
-        if (!isScannerEnabled) return;
-        
-        isScannerEnabled = false; 
-        clearTimeout(scanTimeout); 
-        resetScanUI(); 
-
-        const status = document.getElementById('status-text');
-
-        if (!tempPartID) {
-            // --- จังหวะที่ 1: รับค่าอะไรก็ได้เป็น Part ID ---
-            tempPartID = decodedText;
-            status.innerText = "✅ รับค่า Part: " + tempPartID + " | ต่อไปกดสแกน Locator";
-            status.style.color = "blue";
-            updateTriggerBtnStage("Locator");
-        } else {
-            // --- จังหวะที่ 2: รับค่าอะไรก็ได้เป็น Locator ---
-            scannedItems.push({
-                part_id: tempPartID,
-                locator: decodedText,
-                action: currentMode,
-                timestamp: new Date().toLocaleString('th-TH')
-            });
+            isScannerEnabled = true; // เปิดรับข้อมูล
             
-            tempPartID = null; // Reset เพื่อเริ่มคู่ใหม่
-            status.innerText = "✅ บันทึกคู่สำเร็จ! เตรียมเริ่มชุดใหม่";
-            status.style.color = "green";
-            updateTriggerBtnStage("Part ID");
+            clearTimeout(scanTimeout);
+            scanTimeout = setTimeout(() => {
+                if(isScannerEnabled) {
+                    isScannerEnabled = false;
+                    resetScanUI();
+                    alert("สแกนไม่ติดใน 5 วินาที กรุณากดปุ่มเพื่อลองใหม่");
+                }
+            }, 5000); 
+        }
+
+        function onScanSuccess(decodedText) {
+            if (!isScannerEnabled) return; 
+            
+            isScannerEnabled = false;
+            clearTimeout(scanTimeout);
+            
+            // กะพริบจอสีเขียวเมื่อติด
+            document.body.classList.add('flash-success');
+            setTimeout(() => document.body.classList.remove('flash-success'), 300);
+
+            if (!tempPartID) {
+                tempPartID = decodedText; // รับค่าอะไรก็ได้เป็น Part ID
+                document.getElementById('status-text').innerText = "✅ ได้ Part: " + tempPartID;
+                updateTriggerBtnStage("Locator");
+            } else {
+                scannedItems.push({
+                    part_id: tempPartID,
+                    locator: decodedText, // รับค่าอะไรก็ได้เป็น Locator
+                    action: currentMode,
+                    timestamp: new Date().toLocaleString('th-TH')
+                });
+                tempPartID = null;
+                document.getElementById('status-text').innerText = "✅ บันทึกคู่สำเร็จ!";
+                updateTriggerBtnStage("Part ID");
+                updateUI();
+            }
+            resetScanUI();
+        }
+
+        function resetScanUI() {
+            const triggerBtn = document.getElementById('scan-trigger');
+            triggerBtn.classList.remove('scanning-active');
+            triggerBtn.disabled = false;
+            updateTriggerBtnStage(tempPartID ? "Locator" : "Part ID");
+        }
+
+        function updateTriggerBtnStage(stage) {
+            const triggerBtn = document.getElementById('scan-trigger');
+            if (stage === "Part ID") {
+                triggerBtn.innerText = "📸 กดเพื่อสแกน Part ID";
+                triggerBtn.className = "btn-scan-trigger part-stage";
+            } else {
+                triggerBtn.innerText = "📸 กดเพื่อสแกน Locator";
+                triggerBtn.className = "btn-scan-trigger locator-stage";
+            }
+        }
+
+        function updateUI() {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = "";
+            scannedItems.forEach((item, index) => {
+                tbody.innerHTML += `<tr><td>${item.part_id}</td><td>${item.locator}</td><td>${item.action}</td><td><button onclick="removeItem(${index})">✖</button></td></tr>`;
+            });
+            document.getElementById('count').innerText = scannedItems.length;
+            document.getElementById('list-container').style.display = scannedItems.length > 0 ? 'block' : 'none';
+            document.getElementById('send-btn').style.display = scannedItems.length > 0 ? 'block' : 'none';
+        }
+
+        function removeItem(index) {
+            scannedItems.splice(index, 1);
             updateUI();
         }
-    }
 
-    function resetScanUI() {
-        const readerDiv = document.getElementById('reader');
-        const triggerBtn = document.getElementById('scan-trigger');
-        
-        readerDiv.style.borderColor = "#ccc";
-        triggerBtn.classList.remove('scanning-stage');
-        triggerBtn.disabled = false;
-        
-        // เช็คว่าอยู่ในสถานะรอ Part หรือ รอ Loc เพื่อโชว์ปุ่มให้ถูกสี
-        if (!tempPartID) {
-            updateTriggerBtnStage("Part ID");
-        } else {
-            updateTriggerBtnStage("Locator");
+        function sendAllData() {
+            fetch(googleScriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(scannedItems) })
+            .then(() => { alert("ส่งข้อมูลสำเร็จ!"); location.reload(); });
         }
-    }
 
-    function updateTriggerBtnStage(stage) {
-        const triggerBtn = document.getElementById('scan-trigger');
-        if (stage === "Part ID") {
-            triggerBtn.innerText = "📸 กดสแกน Part ID";
-            triggerBtn.classList.remove('locator-stage');
-            triggerBtn.classList.add('part-stage');
-        } else {
-            triggerBtn.innerText = "📸 กดสแกน Locator";
-            triggerBtn.classList.remove('part-stage');
-            triggerBtn.classList.add('locator-stage');
-        }
-    }
-
-    function updateUI() {
-        const tbody = document.getElementById('table-body');
-        tbody.innerHTML = "";
-        scannedItems.forEach((item, index) => {
-            tbody.innerHTML += `<tr>
-                <td>${item.part_id}</td>
-                <td>${item.locator}</td>
-                <td style="color:${item.action === 'IN' ? 'green' : 'red'}">${item.action}</td>
-                <td><button onclick="removeItem(${index})" style="color:red;border:none;background:none;">✖</button></td>
-            </tr>`;
-        });
-        document.getElementById('count').innerText = scannedItems.length;
-        document.getElementById('list-container').style.display = scannedItems.length > 0 ? 'block' : 'none';
-        document.getElementById('send-btn').style.display = scannedItems.length > 0 ? 'block' : 'none';
-    }
-
-    function removeItem(index) {
-        scannedItems.splice(index, 1);
-        updateUI();
-    }
-
-    function sendAllData() {
-        const btn = document.getElementById('send-btn');
-        btn.innerText = "⏳ กำลังบันทึกข้อมูล...";
-        btn.disabled = true;
-        
-        fetch(googleScriptUrl, { 
-            method: 'POST', 
-            mode: 'no-cors', 
-            body: JSON.stringify(scannedItems) 
-        })
-        .then(() => {
-            alert("✅ บันทึกข้อมูลเข้า Google Sheets สำเร็จ!");
-            scannedItems = [];
-            updateUI();
-            location.reload();
-        })
-        .catch(err => {
-            alert("❌ Error: " + err);
-            btn.disabled = false;
-        });
-    }
-
-    // เริ่มต้นตัวสแกน (บีบระยะไว้ที่ 150px ตามเดิมเพื่อความแม่นยำ)
-    html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
-        fps: 20, 
-        qrbox: 150, 
-        aspectRatio: 1.0 
-    });
-    html5QrcodeScanner.render(onScanSuccess);
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 200 });
+        html5QrcodeScanner.render(onScanSuccess);
     </script>
 </body>
 </html>
